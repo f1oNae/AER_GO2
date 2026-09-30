@@ -16,3 +16,5 @@ wandb/
 .vscode/launch.json
 
 .idea
+.tmp
+.dsh-meow
