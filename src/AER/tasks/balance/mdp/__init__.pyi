@@ -8,12 +8,15 @@ __all__ = [
     "feet_slip",
     "joint_pos_target_l2",
     "lin_vel_cmd_levels",
+    "terrain_levels_vel",
+    "action_smoothness_2",
     "UniformLevelVelocityCommandCfg",
 ]
 
 # Forward stable MDP terms lazily, then override with environment-specific terms below.
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 
-from .curriculums import lin_vel_cmd_levels
-from .rewards import energy_efficiency, feet_slip, joint_pos_target_l2
+from .curriculums import lin_vel_cmd_levels, terrain_levels_vel
+from .rewards import energy_efficiency, feet_slip, joint_pos_target_l2, action_smoothness_2
 from .commands import UniformLevelVelocityCommandCfg
+from .symmetry import *

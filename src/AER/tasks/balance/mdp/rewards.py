@@ -8,8 +8,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
-
-from isaaclab.managers import SceneEntityCfg
+from collections.abc import Sequence
+from isaaclab.managers import SceneEntityCfg, ManagerTermBase, RewardTermCfg
+from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import wrap_to_pi
 
 if TYPE_CHECKING:
@@ -49,8 +50,36 @@ def energy_efficiency(env: ManagerBasedRLEnv, asset_cfg=SceneEntityCfg("robot"),
 
 
 def feet_slip(env: ManagerBasedRLEnv, sensor_cfg, asset_cfg=SceneEntityCfg("robot")) -> torch.Tensor:
-    contact_sensor = env.scene.sensors[sensor_cfg.name]
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     asset: Articulation = env.scene[asset_cfg.name]
     contacts = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
     feet_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]
     return torch.sum(contacts * torch.sum(torch.square(feet_vel_xy), dim=-1), dim=1)
+
+class action_smoothness_2(ManagerTermBase):
+    """Penalize the second-order finite difference of policy actions."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._prev_prev_action = torch.zeros_like(env.action_manager.action)
+        self._history_length = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self._prev_prev_action[env_ids] = 0.0
+        self._history_length[env_ids] = 0
+
+    def __call__(self, env: ManagerBasedRLEnv) -> torch.Tensor:
+        second_difference = (
+            env.action_manager.action
+            - 2.0 * env.action_manager.prev_action
+            + self._prev_prev_action
+        )
+        penalty = torch.sum(torch.square(second_difference), dim=1)
+        valid_history = self._history_length >= 2
+
+        self._prev_prev_action.copy_(env.action_manager.prev_action)
+        self._history_length.add_(1).clamp_(max=2)
+
+        return penalty * valid_history.float()
